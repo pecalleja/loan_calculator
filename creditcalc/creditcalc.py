@@ -1,5 +1,37 @@
 from abc import ABC, abstractmethod
 from math import ceil, floor, log
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--type")
+parser.add_argument("--principal")
+parser.add_argument("--payment")
+parser.add_argument("--periods")
+parser.add_argument("--interest")
+
+args = parser.parse_args()
+
+
+class IncorrectParameter(SystemExit):
+    def __init__(self, *args, **kwargs):
+        print("Incorrect parameters")
+        exit()
+
+
+if args.type not in ["annuity", "diff"]:
+    raise IncorrectParameter
+
+if args.type == "diff" and args.payment is not None:
+    raise IncorrectParameter
+
+if args.interest is None:
+    raise IncorrectParameter
+
+for argument in ["principal", "payment", "periods", "interest"]:
+    argument_value = getattr(args, argument)
+    if argument_value and float(argument_value) < 0:
+        raise IncorrectParameter
 
 
 class Calculation(ABC):
@@ -25,8 +57,10 @@ class MonthlyCalculation(Calculation):
 
     def calculate(self):
         mid = (1 + self.i) ** self.n
-        result = self.p * (self.i * mid) / (mid - 1)
-        print(f"Your monthly payment = {ceil(result)}!")
+        result = ceil(self.p * (self.i * mid) / (mid - 1))
+        print(f"Your annuity payment = {result}!")
+        over_payment = result * self.n - self.p
+        return over_payment
 
 
 class PeriodsCalculation(Calculation):
@@ -41,8 +75,9 @@ class PeriodsCalculation(Calculation):
         years = result // 12
         months = result - (years * 12)
         months_text, year_text = self.years_month_text(months, years)
-
         print(f"It will take {year_text}{months_text} to repay this loan!")
+        over_payment = result * self.a - self.p
+        return over_payment
 
     def years_month_text(self, months, years):
         if years > 1:
@@ -69,41 +104,51 @@ class PrincipalCalculation(Calculation):
 
     def calculate(self):
         mid = (1 + self.i) ** self.n
-        result = self.a / ((self.i * mid) / (mid - 1))
-        print(f"Your loan principal = {floor(result)}!")
+        result = floor(self.a / ((self.i * mid) / (mid - 1)))
+        print(f"Your loan principal = {result}!")
+        over_payment = int(self.a * self.n - result)
+        return over_payment
 
 
-print("What do you want to calculate?")
-print('type "n" for number of monthly payments')
-print('type "a" for annuity monthly payment amount')
-print('type "p" for loan principal:')
-option = input()
+class DifferentiatePaymentCalculation(Calculation):
+    def __init__(self, p, n):
+        self.p = p
+        self.n = n
 
-if option == "n":
-    print("Enter the loan principal:")
-    principal = int(input())
-    print("Enter the monthly payment:")
-    monthly = int(input())
-    formula = PeriodsCalculation(principal, monthly)
+    def calculate(self):
+        total = 0
+        for n in range(1, self.n + 1):
+            mid = self.p * (n - 1) / self.n
+            month_diff = (self.p / self.n) + self.i * (self.p - mid)
+            result = ceil(month_diff)
+            total += result
+            print(f"Month {n}: payment is {result}")
+        print()
+        over_payment = total - self.p
+        return over_payment
 
-elif option == "a":
-    print("Enter the loan principal:")
-    principal = int(input())
-    print("Enter the number of periods:")
-    periods = int(input())
+
+if args.type == "diff" and args.principal and args.periods and args.interest:
+    principal = int(args.principal)
+    periods = int(args.periods)
+    formula = DifferentiatePaymentCalculation(principal, periods)
+elif args.type == "annuity" and args.principal and args.periods and args.interest and not args.payment:
+    principal = int(args.principal)
+    periods = int(args.periods)
     formula = MonthlyCalculation(principal, periods)
-
-elif option == "p":
-    print("Enter the annuity payment:")
-    annuity = float(input())
-    print("Enter the number of periods:")
-    periods = int(input())
+elif args.type == "annuity" and args.payment and args.periods and args.interest and not args.principal:
+    annuity = float(args.payment)
+    periods = int(args.periods)
     formula = PrincipalCalculation(annuity, periods)
-
+elif args.type == "annuity" and args.principal and args.payment and args.interest and not args.periods:
+    principal = int(args.principal)
+    monthly = int(args.payment)
+    formula = PeriodsCalculation(principal, monthly)
 else:
-    raise ValueError("Invalid option")
+    raise IncorrectParameter
 
-print("Enter the loan interest:")
-interest = float(input())
+
+interest = float(args.interest)
 formula.i = interest
-formula.calculate()
+overpayment = formula.calculate()
+print(f"Overpayment = {overpayment}")
